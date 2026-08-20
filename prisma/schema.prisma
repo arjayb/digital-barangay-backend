@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  resident
+  admin
+}
+
+enum RequestStatus {
+  pending
+  under_review
+  approved
+  rejected
+  ready_for_pickup
+  completed
+}
+
+enum ConcernStatus {
+  open
+  in_progress
+  resolved
+}
+
+model User {
+  id            String   @id @default(uuid())
+  fullName      String
+  email         String   @unique
+  passwordHash  String
+  role          Role     @default(resident)
+  address       String?
+  contactNumber String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  requests DocumentRequest[] @relation("Requestor")
+  notices  Notice[]          @relation("PostedBy")
+  concerns Concern[]         @relation("Reporter")
+}
+
+model DocumentRequest {
+  id            String        @id @default(uuid())
+  requestorId   String
+  requestor     User          @relation("Requestor", fields: [requestorId], references: [id])
+  documentType  String
+  purpose       String
+  status        RequestStatus @default(pending)
+  // Kept as JSON (matches the {fileName, fileUrl} shape used across the API)
+  attachments   Json          @default("[]")
+  statusHistory Json          @default("[]")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Official {
+  id          String    @id @default(uuid())
+  name        String
+  position    String
+  committee   String?
+  photoUrl    String?
+  termStart   DateTime?
+  termEnd     DateTime?
+  contactInfo String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Notice {
+  id          String    @id @default(uuid())
+  title       String
+  body        String
+  category    String?
+  postedById  String
+  postedBy    User      @relation("PostedBy", fields: [postedById], references: [id])
+  publishedAt DateTime  @default(now())
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Concern {
+  id          String        @id @default(uuid())
+  reporterId  String?
+  reporter    User?         @relation("Reporter", fields: [reporterId], references: [id])
+  category    String
+  description String
+  location    String?
+  status      ConcernStatus @default(open)
+  attachments Json          @default("[]")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
