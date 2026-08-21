@@ -14,12 +14,14 @@ const {
   updateConcernStatus,
   getReportsSummary,
 } = require('../controllers/adminController');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, requireActiveStaff } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Every route below requires a logged-in admin
-router.use(authenticate, authorize('admin'));
+// Every route below requires a logged-in, ACTIVE admin. requireActiveStaff
+// enforces the account lifecycle (§6): a suspended or pending admin loses
+// operational access here without their account or history being touched.
+router.use(authenticate, authorize('admin'), requireActiveStaff);
 
 // Users
 router.get('/users', getUsers);

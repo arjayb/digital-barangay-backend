@@ -1,7 +1,7 @@
 const express = require('express');
 const { body } = require('express-validator');
-const { createConcern, getMyConcerns } = require('../controllers/concernController');
-const { authenticate } = require('../middleware/auth');
+const { createConcern, getMyConcerns, confirmResolved } = require('../controllers/concernController');
+const { authenticate, authorize } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 const upload = require('../middleware/upload');
 
@@ -11,6 +11,7 @@ router.use(authenticate);
 
 router.post(
   '/',
+  authorize('resident'),
   upload.array('attachments', 3), // up to 3 files, field name "attachments"
   [
     body('category').trim().notEmpty().withMessage('Category is required'),
@@ -21,5 +22,9 @@ router.post(
 );
 
 router.get('/', getMyConcerns);
+
+// v1.1.0 — additive. Resident-only; ownership + status re-verified inside
+// the controller regardless of this role check.
+router.patch('/:id/confirm-resolved', authorize('resident'), confirmResolved);
 
 module.exports = router;

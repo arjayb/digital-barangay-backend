@@ -11,6 +11,7 @@ const officialRoutes = require('./src/routes/officialRoutes');
 const noticeRoutes = require('./src/routes/noticeRoutes');
 const concernRoutes = require('./src/routes/concernRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
+const webmasterRoutes = require('./src/routes/webmasterRoutes');
 
 // Prisma connects lazily on first query — no explicit connect() call needed here.
 const app = express();
@@ -32,6 +33,7 @@ app.use('/api/officials', officialRoutes);
 app.use('/api/notices', noticeRoutes);
 app.use('/api/concerns', concernRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/webmaster', webmasterRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

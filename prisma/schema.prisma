@@ -7,9 +7,14 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ---------------------------------------------------------------------------
+// v1.0.0 enums — unchanged
+// ---------------------------------------------------------------------------
+
 enum Role {
   resident
   admin
+  webmaster // v1.1.0 — additive
 }
 
 enum RequestStatus {
@@ -25,22 +30,72 @@ enum ConcernStatus {
   open
   in_progress
   resolved
+  closed // v1.1.0 — additive: resident-confirmed closure after resolved
 }
 
+// ---------------------------------------------------------------------------
+// v1.1.0 enums — additive
+// ---------------------------------------------------------------------------
+
+// Operational status for staff (admin/webmaster) accounts. Residents are
+// always `active` and never move through this lifecycle.
+enum AccountStatus {
+  pending
+  active
+  suspended
+  rejected
+}
+
+enum ApplicationStatus {
+  pending
+  approved
+  rejected
+}
+
+// Who performed a status-history event. Deliberately separate from the
+// authentication Role enum — "system" is never a login role (DEC-DBA-024).
+enum AuditActorType {
+  resident
+  admin
+  webmaster
+  system
+}
+
+enum CredentialAction {
+  suspended
+  reactivated
+}
+
+// ---------------------------------------------------------------------------
+// v1.0.0 models — additive fields only, nothing removed or retyped
+// ---------------------------------------------------------------------------
+
 model User {
-  id            String   @id @default(uuid())
+  id            String        @id @default(uuid())
   fullName      String
-  email         String   @unique
+  email         String        @unique
   passwordHash  String
-  role          Role     @default(resident)
+  role          Role          @default(resident)
   address       String?
   contactNumber String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // v1.1.0 — additive. Residents keep staffId = null and accountStatus =
+  // active for the lifetime of the account; only staff (admin/webmaster)
+  // move through the pending/active/suspended/rejected lifecycle.
+  staffId       String?       @unique
+  accountStatus AccountStatus @default(active)
 
   requests DocumentRequest[] @relation("Requestor")
   notices  Notice[]          @relation("PostedBy")
   concerns Concern[]         @relation("Reporter")
+
+  requestHistoryEvents RequestStatusHistory[] @relation("RequestHistoryActor")
+  concernHistoryEvents ConcernStatusHistory[] @relation("ConcernHistoryActor")
+  reviewedApplications AdminApplication[]     @relation("ApplicationReviewer")
+  credentialEventsFor  AdminCredentialEvent[] @relation("CredentialEventSubject")
+  credentialEventsBy   AdminCredentialEvent[] @relation("CredentialEventActor")
 }
 
 model DocumentRequest {
@@ -52,9 +107,20 @@ model DocumentRequest {
   status        RequestStatus @default(pending)
   // Kept as JSON (matches the {fileName, fileUrl} shape used across the API)
   attachments   Json          @default("[]")
+
+  // v1.0.0 legacy field. Frozen as of v1.1.0 per DEC-DBA-022: never deleted,
+  // never rewritten, and no longer appended to. RequestStatusHistory is the
+  // canonical audit trail going forward.
   statusHistory Json          @default("[]")
+
+  // v1.1.0 — additive, public-facing identifier. DB id remains the internal
+  // primary key; trackingNumber is what residents/staff see and reference.
+  trackingNumber String?      @unique
+
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
+
+  history RequestStatusHistory[]
 }
 
 model Official {
@@ -94,4 +160,89 @@ model Concern {
   attachments Json          @default("[]")
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+
+  history ConcernStatusHistory[]
+}
+
+// ---------------------------------------------------------------------------
+// v1.1.0 models — all additive, new tables only
+// ---------------------------------------------------------------------------
+
+model RequestStatusHistory {
+  id          String          @id @default(uuid())
+  requestId   String
+  request     DocumentRequest @relation(fields: [requestId], references: [id])
+  fromStatus  RequestStatus?
+  toStatus    RequestStatus
+  actorUserId String?
+  actor       User?           @relation("RequestHistoryActor", fields: [actorUserId], references: [id])
+  actorType   AuditActorType
+  // Human-readable snapshot at the time of the event — not a live lookup,
+  // so it stays correct even if the acting user's staffId ever changes.
+  actorStaffId String?
+  note        String?
+  createdAt   DateTime        @default(now())
+
+  @@index([requestId])
+}
+
+model ConcernStatusHistory {
+  id          String         @id @default(uuid())
+  concernId   String
+  concern     Concern        @relation(fields: [concernId], references: [id])
+  fromStatus  ConcernStatus?
+  toStatus    ConcernStatus
+  actorUserId String?
+  actor       User?          @relation("ConcernHistoryActor", fields: [actorUserId], references: [id])
+  actorType   AuditActorType
+  actorStaffId String?
+  note        String?
+  createdAt   DateTime       @default(now())
+
+  @@index([concernId])
+}
+
+model AdminApplication {
+  id            String            @id @default(uuid())
+  applicantName String
+  email         String
+  passwordHash  String
+  status        ApplicationStatus @default(pending)
+  reviewedById  String?
+  reviewedBy    User?             @relation("ApplicationReviewer", fields: [reviewedById], references: [id])
+  reviewNote    String?
+  createdAt     DateTime          @default(now())
+  reviewedAt    DateTime?
+}
+
+// Suspend/reactivate events for staff accounts. Approve/reject events for
+// new admins already live on AdminApplication (reviewedBy/reviewNote); this
+// table covers the credentialing actions that happen to an *existing*
+// staff account after approval, so the Webmaster Portal's Credential
+// History can show a complete timeline from one place.
+model AdminCredentialEvent {
+  id           String            @id @default(uuid())
+  userId       String
+  user         User              @relation("CredentialEventSubject", fields: [userId], references: [id])
+  action       CredentialAction
+  performedById String
+  performedBy  User              @relation("CredentialEventActor", fields: [performedById], references: [id])
+  note         String?
+  createdAt    DateTime          @default(now())
+
+  @@index([userId])
+}
+
+// Concurrency-safe sequential counters. A single UPDATE ... SET count =
+// count + 1 on an existing row is serialized by Postgres's normal row
+// locking even under READ COMMITTED, so two concurrent requests can never
+// be handed the same number — no unsafe count()+1 read-then-write.
+model TrackingCounter {
+  year  Int @id
+  count Int @default(0)
+}
+
+model StaffIdCounter {
+  prefix String @id
+  count  Int    @default(0)
 }

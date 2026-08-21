@@ -10,6 +10,9 @@ const USER_SELECT = {
   address: true,
   contactNumber: true,
   createdAt: true,
+  // v1.1.0 — additive
+  staffId: true,
+  accountStatus: true,
 };
 
 // Verifies the JWT sent as "Authorization: Bearer <token>" and attaches
@@ -48,4 +51,19 @@ const authorize = (...roles) => (req, res, next) => {
   next();
 };
 
-module.exports = { authenticate, authorize };
+// v1.1.0 — additive. Staff (admin/webmaster) must be `active` before their
+// role-specific operations are allowed; a suspended or pending account
+// keeps its row and history but loses operational access without being
+// deleted. Applied after authorize(), so req.user.role is already known
+// to be a staff role at this point. Residents never hit this middleware.
+const requireActiveStaff = (req, res, next) => {
+  if (!req.user || req.user.accountStatus !== 'active') {
+    return res.status(403).json({
+      success: false,
+      message: 'This staff account is not currently active.',
+    });
+  }
+  next();
+};
+
+module.exports = { authenticate, authorize, requireActiveStaff };

@@ -1,51 +1,34 @@
-// One-off script to create the first admin account, since the API has no
-// self-registration path for admins (on purpose — residents shouldn't be
-// able to grant themselves that role).
-//
-// Usage:
-//   ADMIN_NAME="Jay Barangay" ADMIN_EMAIL="admin@example.com" ADMIN_PASSWORD="changeMe123" npm run seed:admin
-//
-// Reads DATABASE_URL from your .env file, so run this from the server/ folder
-// with a working .env already in place.
+/**
+ * DEPRECATED / RETIRED IN DIGITAL BARANGAY v1.1.0
+ *
+ * This legacy v1.0 bootstrap command previously created Admin users directly
+ * and could promote an existing resident to Admin. That behavior bypasses the
+ * v1.1.0 Webmaster credential-governance model and is intentionally disabled.
+ *
+ * Approved v1.1.0 paths:
+ *   - Existing production Admin -> ADM-0001:
+ *       EXISTING_ADMIN_EMAIL="..." node scripts/bootstrapExistingAdmin.js
+ *   - Seeded Webmaster -> WEB-0001:
+ *       WEBMASTER_NAME="..." WEBMASTER_EMAIL="..." WEBMASTER_PASSWORD="..." node scripts/seedWebmaster.js
+ *   - Demo Admins ADM-0002..ADM-0005:
+ *       use scripts/seedDemoAdmins.js with environment-supplied passwords
+ *   - Future Admin credentialing:
+ *       use the Webmaster-controlled AdminApplication workflow
+ *
+ * This file remains only so old deployment notes invoking `npm run seed:admin`
+ * fail safely instead of silently creating or promoting privileged accounts.
+ */
 
-require('dotenv').config();
-const bcrypt = require('bcryptjs');
-const prisma = require('../src/config/prisma');
+'use strict';
 
-const run = async () => {
-  const { ADMIN_NAME, ADMIN_EMAIL, ADMIN_PASSWORD } = process.env;
+console.error(
+  [
+    'seed:admin is retired in Digital Barangay v1.1.0.',
+    'Direct Admin creation/promotion would bypass Webmaster credential governance.',
+    'Use bootstrapExistingAdmin.js for the existing ADM-0001 account,',
+    'seedDemoAdmins.js for approved demo accounts, or the Webmaster credentialing workflow.',
+    'No database changes were made.',
+  ].join('\n')
+);
 
-  if (!ADMIN_NAME || !ADMIN_EMAIL || !ADMIN_PASSWORD) {
-    console.error(
-      'Missing env vars. Run like:\n' +
-        'ADMIN_NAME="Your Name" ADMIN_EMAIL="you@example.com" ADMIN_PASSWORD="yourpassword" npm run seed:admin'
-    );
-    process.exit(1);
-  }
-
-  const existing = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });
-  if (existing) {
-    console.log(`A user with email ${ADMIN_EMAIL} already exists (role: ${existing.role}).`);
-    if (existing.role !== 'admin') {
-      await prisma.user.update({ where: { id: existing.id }, data: { role: 'admin' } });
-      console.log('Promoted that user to admin.');
-    }
-    await prisma.$disconnect();
-    return;
-  }
-
-  const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
-
-  await prisma.user.create({
-    data: { fullName: ADMIN_NAME, email: ADMIN_EMAIL, passwordHash, role: 'admin' },
-  });
-
-  console.log(`Admin account created for ${ADMIN_EMAIL}. You can now log in via POST /api/auth/login.`);
-  await prisma.$disconnect();
-};
-
-run().catch(async (err) => {
-  console.error(err);
-  await prisma.$disconnect();
-  process.exit(1);
-});
+process.exitCode = 1;
