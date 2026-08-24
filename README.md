@@ -115,4 +115,15 @@ https://github.com/arjayb/Digital-Barangay-App
 
 ## Status
 
-**v1.1.0 is deployed and human-accepted in production.** A separate independent POLARIS audit is deferred as a later assurance exercise and is not a v1.1.0 release blocker.
+**v1.1.0 is deployed and human-accepted in production.** Additional independent assurance remains a future quality checkpoint and is not represented as part of this release.
+
+
+---
+
+## About KELBRIC Technologies
+
+We turn practical ideas and operational needs into focused digital products through rapid prototyping and evidence-based iteration.
+
+**Public product process:** DISCOVER → DESIGN → BUILD → PROVE
+
+© 2026 KELBRIC Technologies.
