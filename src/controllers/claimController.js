@@ -2,7 +2,6 @@ const prisma = require('../config/prisma');
 const asyncHandler = require('../utils/asyncHandler');
 const { decodeClaimToken, attachClaimToken } = require('../utils/claimToken');
 const { auditData } = require('../utils/audit');
-const { isValidRequestTransition } = require('../utils/stateMachine');
 
 const CLAIM_INCLUDE = {
   requestor: { select: { id: true, fullName: true, email: true, contactNumber: true } },
@@ -47,7 +46,7 @@ const releaseClaim = asyncHandler(async (req, res) => {
   const existing = await prisma.documentRequest.findUnique({ where: { id: req.params.id }, include: CLAIM_INCLUDE });
   if (!existing) return res.status(404).json({ success: false, message: 'Claim record not found.' });
   if (existing.status === 'completed') return res.status(409).json({ success: false, message: 'This document has already been released / claimed.' });
-  if (!isValidRequestTransition('admin', existing.status, 'completed')) {
+  if (existing.status !== 'ready_for_pickup') {
     return res.status(400).json({ success: false, message: `This document cannot be released from its current status (${existing.status}).` });
   }
 
