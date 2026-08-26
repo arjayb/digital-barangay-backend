@@ -4,7 +4,6 @@ const REQUEST_TRANSITIONS = {
     pending: ['under_review'],
     under_review: ['approved', 'rejected'],
     approved: ['ready_for_pickup'],
-    ready_for_pickup: ['completed'],
   },
   resident: {
     ready_for_pickup: ['completed'],
