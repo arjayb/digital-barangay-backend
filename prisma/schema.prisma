@@ -7,13 +7,52 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role { resident admin webmaster }
-enum RequestStatus { pending under_review approved rejected ready_for_pickup completed }
-enum ConcernStatus { open in_progress resolved closed }
-enum AccountStatus { pending active suspended rejected }
-enum ApplicationStatus { pending approved rejected }
-enum AuditActorType { resident admin webmaster system }
-enum CredentialAction { suspended reactivated }
+enum Role {
+  resident
+  admin
+  webmaster
+}
+
+enum RequestStatus {
+  pending
+  under_review
+  approved
+  rejected
+  ready_for_pickup
+  completed
+}
+
+enum ConcernStatus {
+  open
+  in_progress
+  resolved
+  closed
+}
+
+enum AccountStatus {
+  pending
+  active
+  suspended
+  rejected
+}
+
+enum ApplicationStatus {
+  pending
+  approved
+  rejected
+}
+
+enum AuditActorType {
+  resident
+  admin
+  webmaster
+  system
+}
+
+enum CredentialAction {
+  suspended
+  reactivated
+}
 
 model User {
   id String @id @default(uuid())
@@ -148,9 +187,6 @@ model AdminCredentialEvent {
   @@index([userId])
 }
 
-// Shared append-only operational ledger for all meaningful Admin mutations.
-// before/after are snapshots; actorName/staffId are snapshots too, preserving
-// historical attribution even if a staff profile changes later.
 model AuditEvent {
   id String @id @default(uuid())
   actorUserId String?
