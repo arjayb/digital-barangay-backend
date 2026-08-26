@@ -31,7 +31,7 @@ const updateUser = asyncHandler(async (req,res) => {
 
 const getAllRequests = asyncHandler(async (req,res) => {
   const where={}; if(req.query.status)where.status=req.query.status;if(req.query.documentType)where.documentType=req.query.documentType;
-  const requests=await prisma.documentRequest.findMany({where,include:{requestor:{select:{fullName:true,email:true}},history:{orderBy:{createdAt:'asc'}}},orderBy:{createdAt:'desc'}});
+  const requests=await prisma.documentRequest.findMany({where,include:{requestor:{select:{fullName:true,email:true}}},orderBy:{createdAt:'desc'}});
   res.json({success:true,count:requests.length,requests});
 });
 
@@ -76,7 +76,7 @@ const deleteNotice = asyncHandler(async (req,res) => {
 
 const getAllConcerns = asyncHandler(async (req,res) => {
   const where={};if(req.query.status)where.status=req.query.status;
-  const concerns=await prisma.concern.findMany({where,include:{reporter:{select:{fullName:true,email:true}},history:{orderBy:{createdAt:'asc'}}},orderBy:{createdAt:'desc'}});res.json({success:true,count:concerns.length,concerns});
+  const concerns=await prisma.concern.findMany({where,include:{reporter:{select:{fullName:true,email:true}}},orderBy:{createdAt:'desc'}});res.json({success:true,count:concerns.length,concerns});
 });
 const updateConcernStatus = asyncHandler(async (req,res) => {
   const {status,note}=req.body;const existing=await prisma.concern.findUnique({where:{id:req.params.id}});if(!existing)return res.status(404).json({success:false,message:'Concern not found'});
@@ -88,8 +88,6 @@ const updateConcernStatus = asyncHandler(async (req,res) => {
   ]);res.json({success:true,concern});
 });
 
-// Global operational ledger. Client supplies exact ISO boundaries so Today /
-// Week / Month follow the admin's local calendar. Any query is capped at 90 days.
 const getActivity = asyncHandler(async (req,res) => {
   const end=req.query.end?new Date(req.query.end):new Date();
   const start=req.query.start?new Date(req.query.start):new Date(end.getTime()-24*60*60*1000);
@@ -99,18 +97,45 @@ const getActivity = asyncHandler(async (req,res) => {
   if(req.query.actorUserId)where.actorUserId=req.query.actorUserId;
   if(req.query.module)where.module=req.query.module;
   if(req.query.action)where.action=req.query.action;
-  const events=await prisma.auditEvent.findMany({where,orderBy:{createdAt:'desc'},take:500});
-  const [admins,modules,actions]=await Promise.all([
+  const [events,total,admins,modules,actions]=await Promise.all([
+    prisma.auditEvent.findMany({where,orderBy:{createdAt:'desc'},take:500}),
+    prisma.auditEvent.count({where}),
     prisma.user.findMany({where:{role:'admin'},select:{id:true,fullName:true,staffId:true},orderBy:{fullName:'asc'}}),
     prisma.auditEvent.findMany({distinct:['module'],select:{module:true},orderBy:{module:'asc'}}),
     prisma.auditEvent.findMany({distinct:['action'],select:{action:true},orderBy:{action:'asc'}}),
   ]);
-  res.json({success:true,count:events.length,events,filters:{admins,modules:modules.map(x=>x.module),actions:actions.map(x=>x.action)}});
+  res.json({success:true,count:events.length,total,truncated:total>events.length,events,filters:{admins,modules:modules.map(x=>x.module),actions:actions.map(x=>x.action)}});
 });
 
+function legacyEventToShared(h,module,recordId,recordLabel){
+  const actorName=h.actor?.fullName || (h.actorType==='system'?'System':h.actorType);
+  return {
+    id:`legacy:${h.id}`,actorUserId:h.actorUserId||null,actorName,actorStaffId:h.actorStaffId||null,actorType:h.actorType,
+    module,action:h.fromStatus===null?'created':'status_changed',recordId,recordLabel,
+    before:h.fromStatus===null?null:{status:h.fromStatus},after:{status:h.toStatus},note:h.note||null,createdAt:h.createdAt,legacy:true,
+  };
+}
+
 const getRecordHistory = asyncHandler(async (req,res) => {
-  const events=await prisma.auditEvent.findMany({where:{module:req.params.module,recordId:req.params.recordId},orderBy:{createdAt:'asc'}});
-  res.json({success:true,count:events.length,events});
+  const {module,recordId}=req.params;
+  const auditEvents=await prisma.auditEvent.findMany({where:{module,recordId},orderBy:{createdAt:'asc'}});
+  let legacy=[];
+  if(module==='requests'){
+    const request=await prisma.documentRequest.findUnique({where:{id:recordId},select:{trackingNumber:true,documentType:true}});
+    const rows=await prisma.requestStatusHistory.findMany({where:{requestId:recordId},include:{actor:{select:{fullName:true}}},orderBy:{createdAt:'asc'}});
+    legacy=rows.map(h=>legacyEventToShared(h,module,recordId,request?.trackingNumber||request?.documentType||'Request'));
+  } else if(module==='concerns'){
+    const concern=await prisma.concern.findUnique({where:{id:recordId},select:{category:true}});
+    const rows=await prisma.concernStatusHistory.findMany({where:{concernId:recordId},include:{actor:{select:{fullName:true}}},orderBy:{createdAt:'asc'}});
+    legacy=rows.map(h=>legacyEventToShared(h,module,recordId,concern?.category||'Concern'));
+  }
+  const merged=[...legacy,...auditEvents].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+  const deduped=[];
+  for(const event of merged){
+    const duplicate=deduped.some(x=>x.module===event.module&&x.recordId===event.recordId&&x.action===event.action&&x.actorUserId===event.actorUserId&&Math.abs(new Date(x.createdAt)-new Date(event.createdAt))<3000&&JSON.stringify(x.after||null)===JSON.stringify(event.after||null));
+    if(!duplicate)deduped.push(event);
+  }
+  res.json({success:true,count:deduped.length,events:deduped});
 });
 
 const getReportsSummary = asyncHandler(async (req,res) => {
