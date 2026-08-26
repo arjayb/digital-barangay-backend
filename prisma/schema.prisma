@@ -171,5 +171,12 @@ model AuditEvent {
   @@index([actorUserId, createdAt])
 }
 
-model TrackingCounter { year Int @id count Int @default(0) }
-model StaffIdCounter { prefix String @id count Int @default(0) }
+model TrackingCounter {
+  year Int @id
+  count Int @default(0)
+}
+
+model StaffIdCounter {
+  prefix String @id
+  count Int @default(0)
+}
