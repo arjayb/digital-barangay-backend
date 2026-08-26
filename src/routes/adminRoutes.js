@@ -6,6 +6,7 @@ const {
   getAllConcerns, updateConcernStatus,
   getActivity, getRecordHistory, getReportsSummary,
 } = require('../controllers/adminController');
+const { resolveClaim, releaseClaim } = require('../controllers/claimController');
 const { authenticate, authorize, requireActiveStaff } = require('../middleware/auth');
 
 const router = express.Router();
@@ -24,7 +25,9 @@ router.delete('/notices/:id', deleteNotice);
 router.get('/concerns', getAllConcerns);
 router.patch('/concerns/:id/status', updateConcernStatus);
 
-// Shared append-only operational history, visible to every active Admin.
+router.get('/claims/resolve', resolveClaim);
+router.patch('/claims/:id/release', releaseClaim);
+
 router.get('/activity', getActivity);
 router.get('/history/:module/:recordId', getRecordHistory);
 router.get('/reports/summary', getReportsSummary);
