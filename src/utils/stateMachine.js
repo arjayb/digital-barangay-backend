@@ -1,13 +1,10 @@
-// Backend-authoritative transition tables (BUILD-SPEC-DBA-001 §14, §16).
-// The frontend may hide invalid options, but this is what actually enforces
-// them — a request can never move through a status the map below doesn't
-// list, regardless of what a client sends.
-
+// Backend-authoritative transition tables.
 const REQUEST_TRANSITIONS = {
   admin: {
     pending: ['under_review'],
     under_review: ['approved', 'rejected'],
     approved: ['ready_for_pickup'],
+    ready_for_pickup: ['completed'],
   },
   resident: {
     ready_for_pickup: ['completed'],
@@ -34,9 +31,4 @@ function isValidConcernTransition(actorRole, fromStatus, toStatus) {
   return allowed.includes(toStatus);
 }
 
-module.exports = {
-  REQUEST_TRANSITIONS,
-  CONCERN_TRANSITIONS,
-  isValidRequestTransition,
-  isValidConcernTransition,
-};
+module.exports = { REQUEST_TRANSITIONS, CONCERN_TRANSITIONS, isValidRequestTransition, isValidConcernTransition };
