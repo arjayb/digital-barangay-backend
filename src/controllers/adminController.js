@@ -88,42 +88,83 @@ const updateConcernStatus = asyncHandler(async (req,res) => {
   ]);res.json({success:true,concern});
 });
 
-const getActivity = asyncHandler(async (req,res) => {
-  const end=req.query.end?new Date(req.query.end):new Date();
-  const start=req.query.start?new Date(req.query.start):new Date(end.getTime()-24*60*60*1000);
-  if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime())||start>end)return res.status(400).json({success:false,message:'Invalid activity date range.'});
-  if(end-start>90*24*60*60*1000)return res.status(400).json({success:false,message:'Custom activity searches are limited to 90 days. Please narrow the date range.'});
-  const where={createdAt:{gte:start,lte:end}};
-  if(req.query.actorUserId)where.actorUserId=req.query.actorUserId;
-  if(req.query.module)where.module=req.query.module;
-  if(req.query.action)where.action=req.query.action;
-  const [events,total,admins,modules,actions]=await Promise.all([
-    prisma.auditEvent.findMany({where,orderBy:{createdAt:'desc'},take:500}),
-    prisma.auditEvent.count({where}),
-    prisma.user.findMany({where:{role:'admin'},select:{id:true,fullName:true,staffId:true},orderBy:{fullName:'asc'}}),
-    prisma.auditEvent.findMany({distinct:['module'],select:{module:true},orderBy:{module:'asc'}}),
-    prisma.auditEvent.findMany({distinct:['action'],select:{action:true},orderBy:{action:'asc'}}),
-  ]);
-  res.json({success:true,count:events.length,total,truncated:total>events.length,events,filters:{admins,modules:modules.map(x=>x.module),actions:actions.map(x=>x.action)}});
-});
+function legacyAction(h){
+  if(String(h.note||'').startsWith('Imported from Digital Barangay')) return 'imported_state';
+  return h.fromStatus===null?'created':'status_changed';
+}
 
 function legacyEventToShared(h,module,recordId,recordLabel){
   const actorName=h.actor?.fullName || (h.actorType==='system'?'System':h.actorType);
   return {
     id:`legacy:${h.id}`,actorUserId:h.actorUserId||null,actorName,actorStaffId:h.actorStaffId||null,actorType:h.actorType,
-    module,action:h.fromStatus===null?'created':'status_changed',recordId,recordLabel,
+    module,action:legacyAction(h),recordId,recordLabel,
     before:h.fromStatus===null?null:{status:h.fromStatus},after:{status:h.toStatus},note:h.note||null,createdAt:h.createdAt,legacy:true,
   };
 }
 
 function sameLogicalHistoryEvent(a,b){
-  if(a.module!==b.module||a.recordId!==b.recordId||a.action!==b.action)return false;
+  if(a.module!==b.module||a.recordId!==b.recordId)return false;
+  const actionsEquivalent=a.action===b.action || ([a.action,b.action].includes('created')&&[a.action,b.action].every(x=>x==='created'));
+  if(!actionsEquivalent)return false;
   if(a.actorUserId&&b.actorUserId&&a.actorUserId!==b.actorUserId)return false;
   if(Math.abs(new Date(a.createdAt)-new Date(b.createdAt))>5000)return false;
   const aBefore=a.before?.status??null,bBefore=b.before?.status??null;
   const aAfter=a.after?.status??null,bAfter=b.after?.status??null;
   return aBefore===bBefore&&aAfter===bAfter;
 }
+
+function dedupeEvents(events){
+  const ordered=[...events].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+  const deduped=[];
+  for(const event of ordered){
+    const duplicate=deduped.some(existing=>sameLogicalHistoryEvent(existing,event));
+    if(!duplicate)deduped.push(event);
+  }
+  return deduped;
+}
+
+const getActivity = asyncHandler(async (req,res) => {
+  const end=req.query.end?new Date(req.query.end):new Date();
+  const start=req.query.start?new Date(req.query.start):new Date(end.getTime()-24*60*60*1000);
+  if(Number.isNaN(start.getTime())||Number.isNaN(end.getTime())||start>end)return res.status(400).json({success:false,message:'Invalid activity date range.'});
+  if(end-start>90*24*60*60*1000)return res.status(400).json({success:false,message:'Custom activity searches are limited to 90 days. Please narrow the date range.'});
+
+  const dateWhere={gte:start,lte:end};
+  const [auditEvents,requestHistory,concernHistory,admins]=await Promise.all([
+    prisma.auditEvent.findMany({where:{createdAt:dateWhere},orderBy:{createdAt:'asc'}}),
+    prisma.requestStatusHistory.findMany({
+      where:{createdAt:dateWhere},
+      include:{actor:{select:{fullName:true}},request:{select:{trackingNumber:true,documentType:true}}},
+      orderBy:{createdAt:'asc'},
+    }),
+    prisma.concernStatusHistory.findMany({
+      where:{createdAt:dateWhere},
+      include:{actor:{select:{fullName:true}},concern:{select:{category:true}}},
+      orderBy:{createdAt:'asc'},
+    }),
+    prisma.user.findMany({where:{role:'admin'},select:{id:true,fullName:true,staffId:true},orderBy:{fullName:'asc'}}),
+  ]);
+
+  const legacyRequests=requestHistory.map(h=>legacyEventToShared(h,'requests',h.requestId,h.request?.trackingNumber||h.request?.documentType||'Request'));
+  const legacyConcerns=concernHistory.map(h=>legacyEventToShared(h,'concerns',h.concernId,h.concern?.category||'Concern'));
+  const allEvents=dedupeEvents([...legacyRequests,...legacyConcerns,...auditEvents]);
+
+  const modules=[...new Set(allEvents.map(x=>x.module).filter(Boolean))].sort();
+  const actions=[...new Set(allEvents.map(x=>x.action).filter(Boolean))].sort();
+  let filtered=allEvents;
+  if(req.query.actorUserId)filtered=filtered.filter(x=>x.actorUserId===req.query.actorUserId);
+  if(req.query.module)filtered=filtered.filter(x=>x.module===req.query.module);
+  if(req.query.action)filtered=filtered.filter(x=>x.action===req.query.action);
+
+  filtered.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  const total=filtered.length;
+  const events=filtered.slice(0,500);
+  res.json({
+    success:true,count:events.length,total,truncated:total>events.length,events,
+    sources:{audit:auditEvents.length,legacyRequest:requestHistory.length,legacyConcern:concernHistory.length},
+    filters:{admins,modules,actions},
+  });
+});
 
 const getRecordHistory = asyncHandler(async (req,res) => {
   const {module,recordId}=req.params;
@@ -138,12 +179,7 @@ const getRecordHistory = asyncHandler(async (req,res) => {
     const rows=await prisma.concernStatusHistory.findMany({where:{concernId:recordId},include:{actor:{select:{fullName:true}}},orderBy:{createdAt:'asc'}});
     legacy=rows.map(h=>legacyEventToShared(h,module,recordId,concern?.category||'Concern'));
   }
-  const merged=[...legacy,...auditEvents].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
-  const deduped=[];
-  for(const event of merged){
-    const duplicate=deduped.some(existing=>sameLogicalHistoryEvent(existing,event));
-    if(!duplicate)deduped.push(event);
-  }
+  const deduped=dedupeEvents([...legacy,...auditEvents]);
   res.json({success:true,count:deduped.length,events:deduped});
 });
 
