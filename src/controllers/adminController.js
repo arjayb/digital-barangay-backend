@@ -116,6 +116,15 @@ function legacyEventToShared(h,module,recordId,recordLabel){
   };
 }
 
+function sameLogicalHistoryEvent(a,b){
+  if(a.module!==b.module||a.recordId!==b.recordId||a.action!==b.action)return false;
+  if(a.actorUserId&&b.actorUserId&&a.actorUserId!==b.actorUserId)return false;
+  if(Math.abs(new Date(a.createdAt)-new Date(b.createdAt))>5000)return false;
+  const aBefore=a.before?.status??null,bBefore=b.before?.status??null;
+  const aAfter=a.after?.status??null,bAfter=b.after?.status??null;
+  return aBefore===bBefore&&aAfter===bAfter;
+}
+
 const getRecordHistory = asyncHandler(async (req,res) => {
   const {module,recordId}=req.params;
   const auditEvents=await prisma.auditEvent.findMany({where:{module,recordId},orderBy:{createdAt:'asc'}});
@@ -132,7 +141,7 @@ const getRecordHistory = asyncHandler(async (req,res) => {
   const merged=[...legacy,...auditEvents].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
   const deduped=[];
   for(const event of merged){
-    const duplicate=deduped.some(x=>x.module===event.module&&x.recordId===event.recordId&&x.action===event.action&&x.actorUserId===event.actorUserId&&Math.abs(new Date(x.createdAt)-new Date(event.createdAt))<3000&&JSON.stringify(x.after||null)===JSON.stringify(event.after||null));
+    const duplicate=deduped.some(existing=>sameLogicalHistoryEvent(existing,event));
     if(!duplicate)deduped.push(event);
   }
   res.json({success:true,count:deduped.length,events:deduped});
