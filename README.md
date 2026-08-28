@@ -6,7 +6,7 @@ Production backend for the Digital Barangay full-stack application, supporting r
 
 **v1.1.0 — live in production**
 
-**Frontend / Live Demo:** https://arjayb.github.io/Digital-Barangay-App/
+**Frontend / Live Demo:** https://kelbrictech.github.io/Digital-Barangay-App/
 
 **Backend API:** https://digital-barangay-backend.onrender.com/
 
@@ -98,7 +98,7 @@ Administrative credentials are provisioned through controlled scripts/workflows 
 
 ## Deployment
 
-The production API runs on Render and uses Neon PostgreSQL. The frontend is deployed separately through GitHub Pages and communicates with this API over HTTPS. `CORS_ORIGIN` must match the deployed GitHub Pages origin.
+The production API runs on Render and uses Neon PostgreSQL. The frontend is deployed separately through GitHub Pages and communicates with this API over HTTPS. `CORS_ORIGIN` supports the approved frontend origin list; during the KELBRIC namespace transition both the legacy and current GitHub Pages origins are permitted until migration verification is complete.
 
 ## Release history
 
@@ -111,12 +111,11 @@ The production backend commit for v1.1.0 is preserved by the `v1.1.0` Git tag.
 
 The public application and resident/admin/webmaster interfaces live in the companion repository:
 
-https://github.com/arjayb/Digital-Barangay-App
+https://github.com/kelbrictech/Digital-Barangay-App
 
 ## Status
 
 **v1.1.0 is deployed and human-accepted in production.** Additional independent assurance remains a future quality checkpoint and is not represented as part of this release.
-
 
 ---
 
